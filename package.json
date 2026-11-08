@@ -1,0 +1,68 @@
+{
+  "name": "e621link",
+  "version": "1.0.1",
+  "description": "E621Link 1.0 bugfixv1 —— 点一下就开好代理，浏览器直接打开 e621 的 Windows 小工具",
+  "main": "src/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "build": "electron-builder"
+  },
+  "keywords": [
+    "e621",
+    "electron",
+    "fluent"
+  ],
+  "author": "E621Link",
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "node-forge": "^1.4.3"
+  },
+  "build": {
+    "appId": "fun.e621link.app",
+    "productName": "E621Link",
+    "copyright": "E621Link",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "renderer/**/*",
+      "scripts/**/*",
+      "preload.js",
+      "assets/app.ico",
+      "assets/icon-*.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/app.ico",
+      "artifactName": "E621Link-1.0-bugfixv1-安装程序.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "E621Link",
+      "installerIcon": "assets/app.ico",
+      "uninstallerIcon": "assets/app.ico",
+      "installerHeaderIcon": "assets/app.ico",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    }
+  }
+}

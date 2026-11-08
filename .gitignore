@@ -1,0 +1,41 @@
+# 依赖
+node_modules/
+
+# 打包产物
+dist/
+out/
+build/
+
+# 日志
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 临时文件
+_*.txt
+_*.json
+_*.js
+_*.html
+_*.png
+!assets/*.png
+!e621link.png
+.tmp/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 环境变量
+.env
+.env.local
+
+# 证书（本机生成的，绝不能进仓库）
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12

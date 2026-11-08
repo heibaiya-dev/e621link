@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="system">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
+  <title>E621Link</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ───────────── 标题栏 ───────────── -->
+<header class="titlebar" id="titlebar">
+  <div class="titlebar-left">
+    <div class="app-mark" aria-hidden="true">
+      <svg viewBox="0 0 16 16" width="16" height="16">
+        <path d="M8 1.2 14 4v4.4c0 3.4-2.4 5.7-6 6.4-3.6-.7-6-3-6-6.4V4L8 1.2Z"
+              fill="currentColor" opacity=".16" />
+        <path d="M8 1.2 14 4v4.4c0 3.4-2.4 5.7-6 6.4-3.6-.7-6-3-6-6.4V4L8 1.2Z"
+              fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+        <path d="M5.6 8.1 7.3 9.8l3.2-3.6" fill="none" stroke="currentColor"
+              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </div>
+    <span class="app-title">E621Link</span>
+  </div>
+
+  <div class="titlebar-right">
+    <button class="icon-btn gear" id="btnSettings" title="设置" aria-label="设置">
+      <svg viewBox="0 0 16 16" width="16" height="16">
+        <path d="M6.9 1.6h2.2l.3 1.6.9.4 1.4-.9 1.6 1.6-.9 1.4.4.9 1.6.3v2.2l-1.6.3-.4.9.9 1.4-1.6 1.6-1.4-.9-.9.4-.3 1.6H6.9l-.3-1.6-.9-.4-1.4.9L2.7 11.6l.9-1.4-.4-.9-1.6-.3V6.9l1.6-.3.4-.9-.9-1.4L4.3 2.7l1.4.9.9-.4.3-1.6Z"
+              fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+        <circle cx="8" cy="8" r="1.9" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      </svg>
+    </button>
+
+    <div class="win-controls">
+      <button class="win-btn" id="btnMin" aria-label="最小化" title="最小化">
+        <svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 5h10" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="win-btn" id="btnMax" aria-label="最大化" title="最大化">
+        <svg viewBox="0 0 10 10" width="10" height="10" id="maxGlyph"><rect x=".5" y=".5" width="9" height="9"
+          fill="none" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="win-btn win-close" id="btnClose" aria-label="关闭" title="关闭">
+        <svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ───────────── 主页 ───────────── -->
+<main class="home" id="home">
+  <section class="hero">
+    <div class="uptime-label">运行时间</div>
+    <div class="uptime" id="uptimeBig" aria-live="off">00:00:00</div>
+
+    <button class="launch" id="btnLaunch">
+      <span class="launch-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" width="20" height="20">
+          <path d="M7 4.6c0-.7.8-1.1 1.4-.7l6.2 4.7c.5.4.5 1.1 0 1.5l-6.2 4.7c-.6.4-1.4 0-1.4-.7V4.6Z"
+                fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="launch-text" id="launchText">一键启动</span>
+    </button>
+
+    <p class="status" id="statusLine" hidden></p>
+  </section>
+</main>
+
+<!-- ───────────── 设置 ───────────── -->
+<div class="settings-layer" id="settingsLayer" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-head">
+      <h1 id="settingsTitle">设置</h1>
+      <button class="icon-btn" id="btnSettingsClose" title="关闭设置（Esc）" aria-label="关闭设置">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor"
+          stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="settings-body">
+      <nav class="settings-nav" id="settingsNav" aria-label="设置分类">
+        <button class="nav-item active" data-pane="conn">连接</button>
+        <button class="nav-item" data-pane="boost">加速</button>
+        <button class="nav-item" data-pane="log">日志</button>
+        <button class="nav-item" data-pane="window">窗口</button>
+      </nav>
+
+      <div class="settings-panes">
+
+        <!-- 连接 -->
+        <section class="pane active" data-pane="conn">
+          <h2 class="pane-title">连接</h2>
+
+          <div class="card">
+            <div class="card-title">状态</div>
+            <dl class="kv">
+              <dt>代理</dt><dd id="stProxy">—</dd>
+              <dt>端口</dt><dd class="mono" id="stPort">—</dd>
+              <dt>本机证书</dt><dd id="stCa">—</dd>
+              <dt>已经处理</dt><dd id="stStats">—</dd>
+            </dl>
+            <div class="actions">
+              <button class="btn" id="btnCheck">联通性检查</button>
+              <button class="btn" id="btnStopProxy">停止代理</button>
+            </div>
+            <pre class="output" id="checkOut" hidden></pre>
+          </div>
+
+          <div class="card">
+            <div class="row">
+              <div class="row-text">
+                <div class="card-title">图片地址替换</div>
+                <p class="desc">打开此开关会把e621图床更换为e926图床，但e926图床是可以正常加载e621的图片的awa，跟正常访问没区别</p>
+              </div>
+              <button class="switch" id="swRewrite" role="switch" aria-checked="true"><span class="knob"></span></button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="row">
+              <div class="row-text">
+                <div class="card-title">装本机证书</div>
+                <p class="desc">啊吧啊吧</p>
+              </div>
+              <button class="switch" id="swTrustCa" role="switch" aria-checked="true"><span class="knob"></span></button>
+            </div>
+            <div class="actions">
+              <button class="btn small" id="btnShowCa">打开文件夹</button>
+              <button class="btn small" id="btnUntrustCa">卸载证书</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="row">
+              <div class="row-text">
+                <div class="card-title">关软件时撤掉代理</div>
+                <p class="desc">关掉软件的时候把系统代理改回去</p>
+              </div>
+              <button class="switch" id="swAutoStop" role="switch" aria-checked="true"><span class="knob"></span></button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">代理地址</div>
+            <p class="desc">点一键启动之后，系统代理会自动设成下面这个。一般不用自己填。Firefox 默认不读系统代理!，要手动填在它自己的网络设置里。</p>
+            <p class="desc mono-break" id="useProxyRule">—</p>
+            <div class="actions">
+              <button class="btn small" id="btnCopyProxy">复制</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 加速 -->
+        <section class="pane" data-pane="boost">
+          <h2 class="pane-title">加速</h2><div class="card">
+            <div class="row">
+              <div class="row-text">
+                <div class="card-title">本地缓存</div>
+                <p class="desc">图片和样式文件存一份在硬盘上，再打开同一个页面就直接本地读。看过的图第二次基本不用等。</p>
+              </div>
+              <button class="switch" id="swCache" role="switch" aria-checked="true"><span class="knob"></span></button>
+            </div>
+            <dl class="kv">
+              <dt>已用</dt><dd id="cacheUsed">—</dd>
+              <dt>命中</dt><dd id="cacheHits">—</dd>
+              <dt>存了</dt><dd id="cacheStores">—</dd>
+            </dl>
+            <div class="actions">
+              <button class="btn small" id="btnCacheFolder">打开缓存文件夹</button>
+              <button class="btn small" id="btnCacheClear">清空缓存</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">缓存上限</div>
+            <div class="two">
+              <label class="field"><span>MB</span><input class="input" id="inpCacheMB" type="number" min="64" max="8192" /></label>
+            </div>
+            <p class="desc">超过这个数就按最久没用过的先删。</p>
+          </div>
+
+          <div class="card">
+            <div class="row">
+              <div class="row-text">
+                <div class="card-title">广告拦截</div>
+                <p class="desc">挡掉 e621 的广告服务器 rv.e621.net，还有一堆统计埋点。挡掉的请求根本不发出去，页面直接少等这些。</p>
+              </div>
+              <button class="switch" id="swBlockAds" role="switch" aria-checked="true"><span class="knob"></span></button>
+            </div>
+            <dl class="kv">
+              <dt>已挡</dt><dd id="blockCount">—</dd>
+              <dt>挡得最多</dt><dd id="blockTop">—</dd>
+            </dl>
+          </div>
+
+          <div class="card">
+            <div class="row">
+              <div class="row-text">
+                <div class="card-title">剔除装饰资源</div>
+                <p class="desc">再挡掉首页随机换的吉祥物图和页脚计数器。开了页面会清爽一点，但首页那个小动物就没了。</p>
+              </div>
+              <button class="switch" id="swTrimJunk" role="switch" aria-checked="false"><span class="knob"></span></button>
+            </div>
+            <dl class="kv">
+              <dt>已剔除</dt><dd id="trimCount">—</dd>
+            </dl>
+          </div>
+        </section>
+
+        <!-- 日志 -->
+        <section class="pane" data-pane="log">
+          <h2 class="pane-title">日志</h2>
+
+          <div class="card">
+            <div class="row">
+              <div class="row-text">
+                <div class="card-title">代理工作日志</div>
+                <p class="desc">日志与调试</p>
+              </div>
+              <button class="btn small" id="btnClearLog">清空</button>
+            </div>
+            <pre class="log" id="logOut">还没有记录━━(￣ー￣*|||━━</pre>
+          </div>
+        </section>
+
+        <!-- 窗口 -->
+        <section class="pane" data-pane="window">
+          <h2 class="pane-title">窗口</h2>
+
+          <div class="card">
+            <div class="row">
+              <div class="row-text">
+                <div class="card-title">关窗口时缩到托盘</div>
+                <p class="desc">点关闭只是把窗口收起来，代理继续跑，浏览器照常用。真要退出右键托盘图标。</p>
+              </div>
+              <button class="switch" id="swTray" role="switch" aria-checked="true"><span class="knob"></span></button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">主题</div>
+            <div class="seg" id="themeSeg" role="radiogroup" aria-label="主题">
+              <button class="seg-btn" data-value="system" role="radio">跟随系统</button>
+              <button class="seg-btn" data-value="light" role="radio">浅色</button>
+              <button class="seg-btn" data-value="dark" role="radio">深色</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="row">
+              <div class="row-text">
+                <div class="card-title">记住窗口大小</div>
+              </div>
+              <button class="switch" id="swRemember" role="switch" aria-checked="true"><span class="knob"></span></button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="row">
+              <div class="row-text">
+                <div class="card-title">启动时最大化</div>
+              </div>
+              <button class="switch" id="swMax" role="switch" aria-checked="false"><span class="knob"></span></button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">窗口大小</div>
+            <div class="two">
+              <label class="field"><span>宽</span><input class="input" id="inpW" type="number" min="720" max="3840" /></label>
+              <label class="field"><span>高</span><input class="input" id="inpH" type="number" min="540" max="2160" /></label>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
