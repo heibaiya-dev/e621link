@@ -18,9 +18,10 @@
   <meta charset="utf-8" />
   <!--
     内容安全策略。这个页面不加载任何外部资源，所以 default-src 只留 'self'。
-    'unsafe-inline' 只给了 style：标题栏和几个图标是行内 style / SVG 属性，
-    而 script-src 保持 'self'，页面里不许出现任何行内 <script>。
-    改这个策略之前先想清楚：它是不让注入的脚本跑起来的最后一道防线。
+    style 给了 'unsafe-inline'：虽然现在的页面里一个行内 style 都没有，
+    但 Electron 和某些 SVG 属性的处理会走这条，去掉容易在别的机器上出怪问题。
+    script-src 严格保持 'self' —— 页面里不许出现任何行内脚本，
+    改这条之前先想清楚：它是不让注入的脚本跑起来的最后一道防线。
   -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
@@ -403,7 +404,7 @@
 
 <!-- 放在 body 最后：脚本执行时上面的 DOM 已经全部就绪，
      app.js 里的 $('#xxx') 不用等 DOMContentLoaded 就能抓到。
-     反过来把 script 挪到 <head> 里，所有 el.xxx 都会是 null。 -->
+     反过来把这个标签挪到 head 里，所有 el.xxx 都会是 null。 -->
 <script src="app.js"></script>
 </body>
 </html>
