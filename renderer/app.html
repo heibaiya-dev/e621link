@@ -1,7 +1,27 @@
 <!doctype html>
+<!--
+  E621Link 的主界面。Electron 渲染进程加载的就是这一页（见 src/main.js 的 loadFile）。
+
+  结构只有三块：
+    header.titlebar    自绘标题栏（窗口是 frame:false 建的，系统标题栏没有）
+    main.home          主页：运行时间 + 一键启动
+    div.settings-layer 设置弹层，默认 hidden，点齿轮才显示
+
+  所有交互都在 app.js 里，这个文件只负责结构。id 跟 app.js 开头那个 el 对象一一对应，
+  改 id 或删元素记得回去同步，否则那边抓到 null，点了没反应也不报错。
+
+  data-theme 放在 <html> 上，styles.css 用它选浅色 / 深色那两套 CSS 变量。
+  这里的初始值只是首屏用，app.js 的 applyTheme 拿到真实设置后会覆盖。
+-->
 <html lang="zh-CN" data-theme="system">
 <head>
   <meta charset="utf-8" />
+  <!--
+    内容安全策略。这个页面不加载任何外部资源，所以 default-src 只留 'self'。
+    'unsafe-inline' 只给了 style：标题栏和几个图标是行内 style / SVG 属性，
+    而 script-src 保持 'self'，页面里不许出现任何行内 <script>。
+    改这个策略之前先想清楚：它是不让注入的脚本跑起来的最后一道防线。
+  -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
   <title>E621Link</title>
@@ -10,10 +30,18 @@
 <body>
 
 <!-- ───────────── 标题栏 ───────────── -->
+<!--
+  整条是拖拽区（styles.css 里 -webkit-app-region: drag），鼠标按住能拖窗口。
+  里面的按钮必须各自设 no-drag，不然点它们等于在拖窗口，点击事件根本到不了。
+  窗口控制按钮放在最右边、紧贴边缘，是 Windows 11 的原生位置和尺寸（46×48），
+  用户手放上去的位置跟普通窗口一致。
+-->
 <header class="titlebar" id="titlebar">
   <div class="titlebar-left">
+    <!-- 盾牌 + 勾，表示「连上了 / 安全」。纯装饰，所以 aria-hidden -->
     <div class="app-mark" aria-hidden="true">
       <svg viewBox="0 0 16 16" width="16" height="16">
+        <!-- 同一段路径画两遍：一层半透明填充做底，一层描边勾轮廓 -->
         <path d="M8 1.2 14 4v4.4c0 3.4-2.4 5.7-6 6.4-3.6-.7-6-3-6-6.4V4L8 1.2Z"
               fill="currentColor" opacity=".16" />
         <path d="M8 1.2 14 4v4.4c0 3.4-2.4 5.7-6 6.4-3.6-.7-6-3-6-6.4V4L8 1.2Z"
@@ -26,14 +54,18 @@
   </div>
 
   <div class="titlebar-right">
+    <!-- 设置入口。用图标不用文字，省地方；title + aria-label 补上文字含义 -->
     <button class="icon-btn gear" id="btnSettings" title="设置" aria-label="设置">
       <svg viewBox="0 0 16 16" width="16" height="16">
+        <!-- 齿轮：外圈那条路径是 12 个齿的轮廓，内圈一个圆当轴 -->
         <path d="M6.9 1.6h2.2l.3 1.6.9.4 1.4-.9 1.6 1.6-.9 1.4.4.9 1.6.3v2.2l-1.6.3-.4.9.9 1.4-1.6 1.6-1.4-.9-.9.4-.3 1.6H6.9l-.3-1.6-.9-.4-1.4.9L2.7 11.6l.9-1.4-.4-.9-1.6-.3V6.9l1.6-.3.4-.9-.9-1.4L4.3 2.7l1.4.9.9-.4.3-1.6Z"
               fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
         <circle cx="8" cy="8" r="1.9" fill="none" stroke="currentColor" stroke-width="1.2"/>
       </svg>
     </button>
 
+    <!-- 最小化 / 最大化 / 关闭。三个按钮的行为在 app.js 的 wireWindowButtons 里，
+         最大化图标会随窗口状态换（那个 id="maxGlyph" 是给 app.js 直接改 innerHTML 用的） -->
     <div class="win-controls">
       <button class="win-btn" id="btnMin" aria-label="最小化" title="最小化">
         <svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 5h10" stroke="currentColor" stroke-width="1"/></svg>
@@ -42,6 +74,7 @@
         <svg viewBox="0 0 10 10" width="10" height="10" id="maxGlyph"><rect x=".5" y=".5" width="9" height="9"
           fill="none" stroke="currentColor" stroke-width="1"/></svg>
       </button>
+      <!-- win-close 这个类只干一件事：hover 时变红。Windows 上关闭按钮就该这样 -->
       <button class="win-btn win-close" id="btnClose" aria-label="关闭" title="关闭">
         <svg viewBox="0 0 10 10" width="10" height="10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1"/></svg>
       </button>
@@ -50,11 +83,29 @@
 </header>
 
 <!-- ───────────── 主页 ───────────── -->
+<!--
+  就一个东西：大号运行时间 + 一键启动。没有别的入口、没有菜单树 ——
+  这软件的全部操作成本就该是「点一下」。
+  垂直居中靠 styles.css 里的 .home（display:grid + place-items:center）。
+-->
 <main class="home" id="home">
   <section class="hero">
     <div class="uptime-label">运行时间</div>
+    <!--
+      秒表。aria-live="off" 是故意的：这个数字每 500ms 变一次，
+      设成 polite 的话屏幕阅读器会没完没了地念，等于没法用。
+      跟着它变色的 .running 类由 app.js 的 renderTime 加。
+    -->
     <div class="uptime" id="uptimeBig" aria-live="off">00:00:00</div>
 
+    <!--
+      主按钮，一个按钮管启停：没跑时是「一键启动」，跑起来之后变成「停止代理」。
+      两种外观都是这一个元素，靠 app.js 的 setBusy 切 class：
+        .busy 转圈（正在启 / 正在停）
+        .stop 次要样式（已经在跑）
+      里面的图标和文字分开两个 span，是因为 .stop 时图标会被 CSS 换成方块
+      （见 styles.css 里 .launch.stop .launch-icon::after）。
+    -->
     <button class="launch" id="btnLaunch">
       <span class="launch-icon" aria-hidden="true">
         <svg viewBox="0 0 20 20" width="20" height="20">
@@ -65,22 +116,46 @@
       <span class="launch-text" id="launchText">一键启动</span>
     </button>
 
+    <!--
+      按钮下面那行提示。初始 hidden —— 内容为空时不该占一块高度，
+      上面的秒表有 40px 下边距，留个空行会让按钮显得飘。
+      app.js 的 setStatus 管显隐和 .err 变色。
+    -->
     <p class="status" id="statusLine" hidden></p>
   </section>
 </main>
 
 <!-- ───────────── 设置 ───────────── -->
+<!--
+  设置整块是一个覆盖层（.settings-layer，position:fixed），默认 hidden。
+
+  几个容易踩的结构点：
+    · layer 的 inset 从 48px 起（styles.css 里 inset: 48px 0 0 0），
+      正好让开标题栏 —— 面板盖住内容区但不盖标题栏，拖动窗口的操作一直可用。
+    · role="dialog" + aria-modal="true" 是给屏幕阅读器看的，让它知道
+      「现在是个弹出对话框」。焦点不靠它管，app.js 里手动 focus 关闭按钮。
+    · 关面板的三种方式：右上角 ×、点遮罩空白处、Esc。前两种在 wireSettings 里，
+      Esc 在 wireKeys 里。
+    · hidden 属性要压过 .settings-layer 的 display:grid，
+      靠的是 styles.css 里那条 [hidden] { display: none !important; }。
+-->
 <div class="settings-layer" id="settingsLayer" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
   <div class="settings-panel" id="settingsPanel">
     <div class="settings-head">
       <h1 id="settingsTitle">设置</h1>
+      <!-- 面板内的关闭按钮。它也是 Esc 之外的唯一「取消」出口 -->
       <button class="icon-btn" id="btnSettingsClose" title="关闭设置（Esc）" aria-label="关闭设置">
         <svg viewBox="0 0 16 16" width="16" height="16"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor"
           stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>
     </div>
 
+    <!-- 左边导航栏 + 右边内容区两栏。导航固定 160px，内容区自适应 -->
     <div class="settings-body">
+      <!--
+        页签。data-pane 的值必须跟下面 .pane 的 data-pane 对上，app.js 靠它配对。
+        默认第一个带 active —— 打开设置永远有个页签是选中的。
+      -->
       <nav class="settings-nav" id="settingsNav" aria-label="设置分类">
         <button class="nav-item active" data-pane="conn">连接</button>
         <button class="nav-item" data-pane="boost">加速</button>
@@ -90,14 +165,18 @@
 
       <div class="settings-panes">
 
-        <!-- 连接 -->
+        <!-- 连接：代理状态、联通性检查、图片改写、证书、退出时撤代理、代理地址 -->
+        <!-- 四个页签的内容都是常驻 DOM，非 active 的只是 display:none。
+             这样切页签不用重建节点，输入框里没保存的内容也不会丢 -->
         <section class="pane active" data-pane="conn">
           <h2 class="pane-title">连接</h2>
 
+          <!-- 状态卡片。数字由 app.js 的 refreshState 填，没数据时统一显示 — -->
           <div class="card">
             <div class="card-title">状态</div>
             <dl class="kv">
               <dt>代理</dt><dd id="stProxy">—</dd>
+              <!-- 端口加了 mono，等宽数字，位数变化时不会左右抖 -->
               <dt>端口</dt><dd class="mono" id="stPort">—</dd>
               <dt>本机证书</dt><dd id="stCa">—</dd>
               <dt>已经处理</dt><dd id="stStats">—</dd>
@@ -106,19 +185,28 @@
               <button class="btn" id="btnCheck">联通性检查</button>
               <button class="btn" id="btnStopProxy">停止代理</button>
             </div>
+            <!-- 检查结果输出框。初始 hidden，点检查才显示并写内容。
+                 内容是几行纯文本，用 <pre> 保留换行，样式见 .output -->
             <pre class="output" id="checkOut" hidden></pre>
           </div>
 
+          <!-- 图片地址替换。默认开，关掉图片基本全裂，开关文案里写清楚了 -->
           <div class="card">
             <div class="row">
               <div class="row-text">
                 <div class="card-title">图片地址替换</div>
                 <p class="desc">打开此开关会把e621图床更换为e926图床，但e926图床是可以正常加载e621的图片的awa，跟正常访问没区别</p>
               </div>
+              <!-- 开关。用 role="switch" + aria-checked 而不是 <input type=checkbox>，
+                   是为了能完全自己画样式（滑动的小圆点）。状态全在 aria-checked 上，
+                   app.js 的 isOn / setSwitch 读写的就是它。
+                   注意 HTML 里这几个 aria-checked 的初始值只是首屏的样子，
+                   真实值由 syncSettingsUI 覆盖，所以不必跟默认设置严格一致 -->
               <button class="switch" id="swRewrite" role="switch" aria-checked="true"><span class="knob"></span></button>
             </div>
           </div>
 
+          <!-- 本机证书。拆 TLS 必须有它，没装浏览器会弹证书警告 -->
           <div class="card">
             <div class="row">
               <div class="row-text">
@@ -127,12 +215,15 @@
               </div>
               <button class="switch" id="swTrustCa" role="switch" aria-checked="true"><span class="knob"></span></button>
             </div>
+            <!-- 两个手工兜底操作。开关那一步失败的时候用它们重装 / 强删 -->
             <div class="actions">
               <button class="btn small" id="btnShowCa">打开文件夹</button>
               <button class="btn small" id="btnUntrustCa">卸载证书</button>
             </div>
           </div>
 
+          <!-- 退出时还原系统代理。关掉的话程序退出后系统代理还指着已经关掉的端口，
+               表现就是整台电脑上不了网，所以这个默认是开的 -->
           <div class="card">
             <div class="row">
               <div class="row-text">
@@ -143,9 +234,13 @@
             </div>
           </div>
 
+          <!-- 代理地址。给需要手动填代理的地方用（Firefox 就是典型），
+               文案里那段「Firefox 默认不读系统代理」是这个软件最常被问的问题之一 -->
           <div class="card">
             <div class="card-title">代理地址</div>
             <p class="desc">点一键启动之后，系统代理会自动设成下面这个。一般不用自己填。Firefox 默认不读系统代理!，要手动填在它自己的网络设置里。</p>
+            <!-- mono-break：等宽字体 + 任意位置断行。这个串是 http=127.0.0.1:1234;https=... 这种，
+                 中间没有空格，不断行的话会把卡片撑宽 -->
             <p class="desc mono-break" id="useProxyRule">—</p>
             <div class="actions">
               <button class="btn small" id="btnCopyProxy">复制</button>
@@ -153,7 +248,11 @@
           </div>
         </section>
 
-        <!-- 加速 -->
+        <!-- 加速：本地缓存、缓存上限、广告拦截、剔除装饰资源 -->
+        <!-- 注意 h2 和第一张卡片写在同一行，中间没有换行。
+             这是 <h2> 的最后一个子节点跟卡片之间不留空白文本节点，
+             不影响布局（.card 是块级），但改格式的时候别顺手拆开，
+             拆开会在 .pane-title 的 margin 之外多出一个空白行高 -->
         <section class="pane" data-pane="boost">
           <h2 class="pane-title">加速</h2><div class="card">
             <div class="row">
@@ -163,6 +262,8 @@
               </div>
               <button class="switch" id="swCache" role="switch" aria-checked="true"><span class="knob"></span></button>
             </div>
+            <!-- 缓存统计。这三个数字由 refreshState 填，
+                 面板每次打开都会重新拉一遍，不做实时轮询 -->
             <dl class="kv">
               <dt>已用</dt><dd id="cacheUsed">—</dd>
               <dt>命中</dt><dd id="cacheHits">—</dd>
@@ -174,14 +275,19 @@
             </div>
           </div>
 
+          <!-- 缓存上限。只有一个输入框，所以外面套了 .two / .field 那套栅格，
+               保持跟「窗口大小」那张卡片的视觉一致（虽然那边是两个框） -->
           <div class="card">
             <div class="card-title">缓存上限</div>
             <div class="two">
+              <!-- min / max 是给浏览器校验的，真正的上下限在 src/settings.js 的 normalize，
+                   这里写错了也不会存进非法值 -->
               <label class="field"><span>MB</span><input class="input" id="inpCacheMB" type="number" min="64" max="8192" /></label>
             </div>
             <p class="desc">超过这个数就按最久没用过的先删。</p>
           </div>
 
+          <!-- 广告拦截。挡掉的请求在代理那边就直接断了，不往上发 -->
           <div class="card">
             <div class="row">
               <div class="row-text">
@@ -190,12 +296,16 @@
               </div>
               <button class="switch" id="swBlockAds" role="switch" aria-checked="true"><span class="knob"></span></button>
             </div>
+            <!-- 「挡得最多」那一行可能很长（好几个域名拼起来），靠 .kv 的
+                 word-break: break-all 兜住，不会把卡片撑破 -->
             <dl class="kv">
               <dt>已挡</dt><dd id="blockCount">—</dd>
               <dt>挡得最多</dt><dd id="blockTop">—</dd>
             </dl>
           </div>
 
+          <!-- 剔除装饰资源。默认关（aria-checked="false"），
+               因为它挡的是首页那只随机小动物，有人就是想看 -->
           <div class="card">
             <div class="row">
               <div class="row-text">
@@ -210,7 +320,7 @@
           </div>
         </section>
 
-        <!-- 日志 -->
+        <!-- 日志：整个面板里最简单的一页，一块大输出框 + 清空按钮 -->
         <section class="pane" data-pane="log">
           <h2 class="pane-title">日志</h2>
 
@@ -222,14 +332,18 @@
               </div>
               <button class="btn small" id="btnClearLog">清空</button>
             </div>
+            <!-- 日志输出。初始文字就是 app.js 里「没有记录」那句，两处一致，
+                 所以第一次打开不会看到闪烁。内容由 renderLog 整体重写 -->
             <pre class="log" id="logOut">还没有记录━━(￣ー￣*|||━━</pre>
           </div>
         </section>
 
-        <!-- 窗口 -->
+        <!-- 窗口：托盘、主题、记忆大小、启动最大化、宽高 -->
         <section class="pane" data-pane="window">
           <h2 class="pane-title">窗口</h2>
 
+          <!-- 缩托盘。默认开 —— 关窗口不该把正在服务的代理一起停掉，
+               所以「关闭」的语义在这里被改成了「收起来」 -->
           <div class="card">
             <div class="row">
               <div class="row-text">
@@ -240,6 +354,8 @@
             </div>
           </div>
 
+          <!-- 主题。分段控件，三选一，用 role="radiogroup" / role="radio"，
+               选中状态同样走 aria-checked（app.js 的 setSeg 写它） -->
           <div class="card">
             <div class="card-title">主题</div>
             <div class="seg" id="themeSeg" role="radiogroup" aria-label="主题">
@@ -249,6 +365,7 @@
             </div>
           </div>
 
+          <!-- 这两个开关没有 desc：名字本身就说完了，多写一句纯属凑数 -->
           <div class="card">
             <div class="row">
               <div class="row-text">
@@ -267,6 +384,9 @@
             </div>
           </div>
 
+          <!-- 宽高。两个框共用一个 change 处理器，
+               只填一个不会存（见 app.js 的 saveSize）。
+               min / max 跟主窗口的 minWidth 720 / minHeight 540 和设置的 4K 上限对齐 -->
           <div class="card">
             <div class="card-title">窗口大小</div>
             <div class="two">
@@ -281,6 +401,9 @@
   </div>
 </div>
 
+<!-- 放在 body 最后：脚本执行时上面的 DOM 已经全部就绪，
+     app.js 里的 $('#xxx') 不用等 DOMContentLoaded 就能抓到。
+     反过来把 script 挪到 <head> 里，所有 el.xxx 都会是 null。 -->
 <script src="app.js"></script>
 </body>
 </html>

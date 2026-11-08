@@ -100,6 +100,18 @@ function rewriteBody(host, contentType, body) {
   return Buffer.from(fixed, 'utf8');
 }
 
+// 解压上游返回的内容。
+//
+// 为什么要自己解：代理要改网页里的图片域名（把 e621 换成 e926），
+// 得先拿到明文才能改。所以请求上游时固定带 accept-encoding: gzip，
+// 拿回来自己解开、改完、再压回去发给浏览器。
+//
+// 四种格式都支持，是因为不是所有服务器都老实听话 ——
+// 有的不管你请求什么，硬塞 brotli 或者 zstd。兜住这四种基本覆盖全部情况。
+//
+// 出错返回 null 而不是抛异常。解不开说明内容坏了或者用了不认识的格式，
+// 上层会选择把原始内容原样转给浏览器（虽然可能是乱的，但至少不报错）。
+// 最后那个 return body 是给没有压缩的情况用的。
 function decompress(body, encoding) {
   const enc = String(encoding || '').toLowerCase();
   try {
@@ -115,12 +127,12 @@ function decompress(body, encoding) {
 
 // ── 代理本体 ─────────────────────────────────────────────────
 
-let upstreamSession = null;
-let server = null;
-let actualPort = 0;
+let upstreamSession = null;  // 发上游请求用的 Electron session（见 installUpstreamSession）
+let server = null;           // 本地监听的服务
+let actualPort = 0;          // 实际用的端口。listen(0) 时由系统分配
 let stats = { requests: 0, images: 0, rewritten: 0, errors: 0, cacheHits: 0, retries: 0 };
-let onLog = () => {};
-let rewriteEnabled = true;
+let onLog = () => {};        // 日志回调，由 main.js 传进来
+let rewriteEnabled = true;   // 要不要改图片域名
 
 function log(line) {
   onLog(line);
@@ -298,10 +310,17 @@ const AUTO_MAX = 500;
 // 正在拉取的请求。同一个词同时来好几次就只发一次，其余的等结果。
 const autoInflight = new Map();
 
+// 缓存键：域名 + 路径。
+// 用 | 当分隔符，是因为 URL 里不会出现它，不会拼出歧义。
+// 域名转小写，主机名大小写不敏感。
 function autoKey(host, urlPath) {
   return String(host).toLowerCase() + '|' + urlPath;
 }
 
+// 查缓存。过期了顺手删掉，返回 null。
+//
+// 过期的处理是「用到才删」而不是定时清理 ——
+// 定时器要额外占资源，而补全缓存本来就不大，用到的时候删完全够。
 function autoGet(host, urlPath) {
   const k = autoKey(host, urlPath);
   const hit = autoCache.get(k);
@@ -313,6 +332,11 @@ function autoGet(host, urlPath) {
   return hit;
 }
 
+// 存一份。
+//
+// 超过 AUTO_MAX 条就删最早进来的那个。
+// 用 Map 的插入顺序当 LRU 是很粗的做法（命中的不会移到末尾），
+// 但对补全缓存来说够用 —— 常用的词都是刚打过的，本来就在末尾。
 function autoPut(host, urlPath, body) {
   const k = autoKey(host, urlPath);
   autoCache.set(k, { at: Date.now(), body });
@@ -476,6 +500,11 @@ async function fetchWithRetry(host, rawReq, isAutocomplete) {
   throw err;
 }
 
+// 把上游拿到的结果拼成一个 HTTP/1.1 响应，写回浏览器。
+//
+// 关键在 content-length：必须用实际 body 的长度重新算，
+// 不能沿用上游的。因为我们可能改过内容（换图片域名），长度变了。
+// 带着旧的长度，浏览器会按旧长度读，多读或者少读，页面直接崩。
 function buildResponse(res) {
   const lines = [`HTTP/1.1 ${res.status} ${res.statusText || ''}`.trim()];
   const headers = { ...res.headers, 'content-length': String(res.body.length) };
@@ -497,6 +526,12 @@ function buildResponse(res) {
   return Buffer.concat([Buffer.from(lines.join('\r\n') + '\r\n\r\n', 'latin1'), res.body]);
 }
 
+// 造一个最简的错误响应。
+//
+// 用在还没进入正常 HTTP 处理流程就出错的地方（比如请求行解析失败）。
+// 这时候连请求是什么都不知道，只能给个裸响应。
+//
+// Connection: close 是必须的 —— 出错了就别指望这条连接还能复用。
 function plainError(status, text) {
   return buildResponse({
     status,
@@ -507,6 +542,14 @@ function plainError(status, text) {
 }
 
 // 浏览器要连一个我们不管的域名：原样把字节转发过去
+// 浏览器要连一个我们不管的域名：原样把字节转发过去。
+//
+// 这是最干净的做法 —— 不做任何解析，纯 TCP 双向拷贝。
+// HTTPS 本来就是加密的，我们不拆，等于让别人的站点走正常加密，
+// 跟没装代理一模一样。
+//
+// 两边都挂 error 处理：任何一头断了都要把另一头也关掉，
+// 否则会留下一个半死的连接，越积越多，最后句柄耗尽。
 function tunnel(socket, host, port) {
   const up = net.connect(port || 443, host);
   up.on('error', () => socket.destroy());
@@ -515,6 +558,22 @@ function tunnel(socket, host, port) {
   socket.pipe(up);
 }
 
+// 处理 CONNECT 请求。浏览器要走 HTTPS 代理时，先发一个 CONNECT 说
+// 「我要连 example.com:443」，代理回 200 之后，后面的字节就当成裸流转发。
+//
+// 这个函数是整个代理最关键的分岔路口，四种情况：
+//
+//   1) 不归我们管的域名     → 纯隧道，原样转发（tunnel）
+//   2) 广告域名             → 直接 403 拒掉，连隧道都不建
+//   3) 图片域名 + 关了替换  → 纯隧道（这时候图会裂，但用户自己选的）
+//   4) 其他（主站等）       → 拆 TLS，看明文，改内容
+//
+// 第 2 种为什么不走隧道：走了隧道再断，浏览器会先建立连接再失败，
+// 有些页面会卡住等超时。直接 403 让浏览器立刻知道这个请求没了。
+// 页面照常显示，广告位就是空的。
+//
+// 第 3 种是个妥协：用户关了「替换图片域名」就不拦图片流量。
+// 但 e621 的图片域名在部分网络下会被掐，所以图会裂。这是预期行为。
 function handleConnect(socket, host, port) {
   if (!isTargetHost(host)) {
     socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
@@ -540,8 +599,19 @@ function handleConnect(socket, host, port) {
     return;
   }
 
+  // 到这里就是要拆 TLS 了。
+  //
+  // 必须先回 200 再开始 TLS 握手，顺序反了浏览器会一直等。
+  // 回完 200 之后这条连接就变成纯字节流，我们在这上面自己扮演服务端，
+  // 跟浏览器握手。
   socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
 
+  // 给这个域名现签一张证书。
+  //
+  // 用 readCa() 而不是 ensureCa()，是因为正常情况下 CA 早就存在了
+  // （启动时建过）。只有极端情况（用户手动删了 ca 目录）才会走到
+  // ensureCa 现生成一套 —— 那套新的没进信任区，浏览器会报警告，
+  // 但至少连接不会断，用户还能看到页面。
   let pair;
   try {
     const localCa = ca.readCa() || ca.ensureCa();
@@ -552,6 +622,15 @@ function handleConnect(socket, host, port) {
     return;
   }
 
+  // 在已有 socket 上包一层 TLS，扮演服务端。
+  //
+  // ALPNProtocols 只给 http/1.1：
+  //   代理要逐条解析请求、改内容，HTTP/2 是二进制分帧、多路复用，
+  //   处理起来复杂得多（要专门引 h2 库）。
+  //   只报 h1 的话浏览器会乖乖用 h1，省一大堆事。
+  //
+  // honorCipherOrder: true 让服务端决定用哪个加密套件，
+  // 这是推荐做法（防降级攻击）。
   const secure = new tls.TLSSocket(socket, {
     isServer: true,
     key: pair.key,
@@ -612,6 +691,16 @@ function handleConnect(socket, host, port) {
   secure.on('close', () => socket.destroy());
 }
 
+// 有新连接进来。第一件事是读第一行，看是 CONNECT 还是普通请求。
+//
+// CONNECT 是 HTTPS 走代理的标准做法：浏览器说「帮我连 xxx:443」，
+// 之后就整条连接都当隧道用。我们靠它拿到目标域名。
+//
+// 普通请求（不带 CONNECT）一般是 http:// 明文访问，或者是代理自检。
+// 这种情况少见，走简单处理。
+//
+// 读第一行设了大小上限（8KB）：正常的请求行最多几百字节，
+// 超过这个数的要么是错乱数据、要么有人故意灌垃圾，直接断掉。
 function onConnection(socket) {
   socket.once('data', (chunk) => {
     const first = chunk.toString('latin1');
@@ -660,6 +749,11 @@ function start(session, options = {}) {
   });
 }
 
+// 关掉代理。
+//
+// 只关监听、清空内存缓存，不还原系统代理 —— 那件事由 main.js 的
+// stopProxy 负责，它会在调这个之前先还原。分工清楚，
+// 免得两边都去还原，互相打架。
 function stop() {
   if (!server) return { ok: true };
   try {

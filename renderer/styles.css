@@ -11,71 +11,144 @@
      动效       微交互 100–150ms，转场 250–300ms
    ========================================================================== */
 
+/* 这个文件的结构（按出现顺序）：
+     1) CSS 变量：浅色一套、深色一套、跟随系统一套
+     2) 基础重置：hidden、html/body
+     3) 标题栏：拖拽区 + 三个窗口按钮
+     4) 主页：运行时间、主按钮
+     5) 通用件：btn / switch / seg / input（设置页全靠这几个拼）
+     6) 设置弹层：遮罩、面板、左导航、右内容、卡片
+     7) 滚动条、减少动效
+
+   三条贯穿全文件的规则：
+   · 颜色一律走 var(--x)，不要在规则里写死色值。写死一个 #0078d4，
+     深色主题下就它一个不跟着变，这种 bug 看着最莫名其妙。
+     例外只有三个窗口按钮的 hover 红（#c42b1c），那个色深浅主题通用。
+   · 间距只用 4 的倍数（4/6/8/12/16/24/32）。6 和 10 是给图标对齐用的微调，
+     不属于间距体系。
+   · 动效时长分两档：交互反馈 100–150ms，进场 200–320ms。
+     超过 150ms 的悬停反馈会让人觉得卡，低于 200ms 的进场又看不出是动画。
+*/
+
+/* ───────────────────────── 颜色与尺寸变量 ───────────────────────── */
+
+/* 浅色主题。挂在 :root 上，所以它同时是「没有 data-theme 属性」时的兜底。
+   深色那两套只是把下面这些同名变量换掉，规则本身一份都不用改。 */
 :root {
+  /* 告诉浏览器这是浅色界面。影响的是原生控件（输入框的滚动条、自动填充底色、
+     下拉箭头）和系统级 UI，不设的话深色主题里会出现白底的滚动条 */
   color-scheme: light;
 
+  /* 主色。用 Fluent 的 Accent 色，不是随便挑的蓝：
+     它是 Win11 默认主题色，用户看着像系统自带的东西，不像第三方软件 */
   --accent: #0078d4;
+  /* hover / 按下两档。Windows 的规则是 hover 变亮一档、按下变暗一档，
+     不是靠透明度叠加（浅色底上叠透明会脏） */
   --accent-hover: #106ebe;
   --accent-press: #005a9e;
+  /* 主色的极淡底，用于选中态背景。8% 是能看出有色、但盖在卡片上不明显抢字的临界点 */
   --accent-soft: rgba(0, 120, 212, 0.08);
 
+  /* 语义色。这三个取的是 Win11 系统色板里的 InfoBar 色，
+     不自己调 —— 红绿黄这三色最容易和系统里别的地方对不上 */
   --err: #c42b1c;
   --ok: #0f7b0f;
   --warn: #9d5d00;
 
+  /* 文字四档。层级不是靠字号拉开的（这界面字都很小），全凭颜色深浅：
+     正文 → 次要说明 → 标签/占位 → 禁用。跳到第三档之后对比度已经很弱，
+     再淡就别用来承载信息了 */
   --text: #1a1a1a;
   --text-2: #616161;
   --text-3: #8a8a8a;
   --text-dis: #a0a0a0;
 
+  /* 背景三档：窗口底 / 卡片白 / 卡片里的凹陷块（输出框、导航栏底） */
   --bg: #f3f3f3;
   --bg-2: #ffffff;
   --bg-3: #f9f9f9;
   --line: #e5e5e5;
+  /* 控件默认底色。浅色主题里跟卡片一样白，靠 1px 边框跟卡片区分 */
   --ctrl: #ffffff;
   --hover: #e9e9e9;
   --press: #c4c4c4;
 
+  /* 半透明材质。Fluent 的 Mica / Acrylic 靠颜色 + backdrop-filter 一起做：
+     颜色带 alpha 是为了让背后的东西透上来一点，
+     光有 blur 没有 alpha 是糊的，光有 alpha 没有 blur 是灰玻璃。 */
   --acrylic: rgba(252, 252, 252, 0.85);
   --mica: rgba(243, 243, 243, 0.70);
+  /* 弹层遮罩。30% 黑：够压住底下的内容，又能看见底下是主页而不是一片黑 */
   --layer: rgba(0, 0, 0, 0.30);
 
+  /* 实测（Windows 11 浅色）：系统菜单是 0 4px 8px / 0.14，
+     对话框是 0 8px 16px / 0.20。这套值比实测略收敛一点，
+     因为这个界面白卡片多，阴影重了会显脏。 */
   --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.08);
   --shadow-flyout: 0 4px 12px rgba(0, 0, 0, 0.12);
   --shadow-dialog: 0 8px 24px rgba(0, 0, 0, 0.24);
 
+  /* 圆角三档，别乱用：
+     sm 用在控件（按钮、输入框、开关底座外围的方角元素）
+     md 用在卡片
+     lg 用在弹层/对话框
+     混着用的后果是界面上出现一堆不同的弧度，看着像没设计的拼装货 */
   --r-sm: 4px;
   --r-md: 8px;
   --r-lg: 12px;
 
+  /* 缓动曲线：
+     winui    Fluent 标准曲线，起步快、尾部很慢，用在开关位移和弹层进场
+     ease-out 通用出场，元素快速就位，用在 hover / 显隐
+     ease-inout 两头都缓，用在跨状态的颜色过渡（主题切换） */
   --ease-winui: cubic-bezier(0.1, 0.9, 0.2, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
 
+  /* 字体。
+     "Segoe UI Variable" 是 Win11 的，带光学尺寸变体；Win10 没有就退到 Segoe UI。
+     后面跟两个雅黑，是因为这界面全是中文 —— Segoe 里没有汉字，
+     不加中文回退的话中文会落到别的字体上，行高和粗细跟英文完全对不上。 */
   --font: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI",
           "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  /* Display 变体用于大字号（56px 的秒表、标题）。它的字距更紧、字形更秀气，
+     正文用它反而不如 Text 变体清楚 */
   --font-display: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI",
                   "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  /* 日志和代理地址用等宽。Cascadia 是 Win11 自带的终端字体，
+     没有就退 Consolas；末尾还是挂个雅黑，因为日志里可能有中文 */
   --mono: "Cascadia Mono", "Cascadia Code", Consolas, "Microsoft YaHei UI", monospace;
 }
 
+/* 深色主题，用户手动选了「深色」时用。
+   变量名跟上面完全一样，只是值换掉，所以所有规则一行都不用改。 */
 html[data-theme="dark"] {
   color-scheme: dark;
 
+  /* 深色下的主色不是把 #0078d4 调暗，而是换成浅蓝 #60cdff。
+     原因：深色背景上 #0078d4 对比度不够（尤其当文字色），
+     Win11 深色主题用的就是这个浅蓝。hover / 按下方向也反了 ——
+     深色底上变亮才是「靠近」，变暗会看成按下去 */
   --accent: #60cdff;
   --accent-hover: #78d4ff;
   --accent-press: #4cc2ff;
   --accent-soft: rgba(96, 205, 255, 0.10);
 
+  /* 语义色整体提亮，不然在 #202020 上根本看不清 */
   --err: #ff6b6b;
   --ok: #6bcb77;
   --warn: #ffd93d;
 
+  /* 深色的正文用纯白，不是 #ddd —— 深底会把字「吃」掉一点，
+     不顶到最亮会显得发灰 */
   --text: #ffffff;
   --text-2: #c5c5c5;
   --text-3: #8a8a8a;
   --text-dis: #5c5c5c;
 
+  /* 注意卡片（--bg-2 #1a1a1a）比窗口底（--bg #202020）还暗。
+     浅色里卡片比底亮，深色里反过来 —— Fluent 就是这么定义的（靠明度差分层，
+     不是靠「亮=前层」），跟着系统走用户才觉得一致 */
   --bg: #202020;
   --bg-2: #1a1a1a;
   --bg-3: #2d2d2d;
@@ -84,15 +157,29 @@ html[data-theme="dark"] {
   --hover: #3d3d3d;
   --press: #4d4d4d;
 
+  /* 深色材质的 alpha 要比浅色高一点（0.80/0.70 vs 0.85/0.70）：
+     深色下透过去的东西如果太亮，会形成一块块亮斑，
+     所以底色调得更实一些。层遮罩则加厚到 55%，深色下 30% 压不住 */
   --acrylic: rgba(44, 44, 44, 0.80);
   --mica: rgba(32, 32, 32, 0.70);
   --layer: rgba(0, 0, 0, 0.55);
 
+  /* 阴影的 alpha 全部加大。深色底下阴影本来就看不见，
+     不加粗的话弹层会跟背景糊成一片，完全没有「浮起来」的感觉 */
   --shadow-2: 0 2px 4px rgba(0, 0, 0, 0.28);
   --shadow-flyout: 0 4px 12px rgba(0, 0, 0, 0.38);
   --shadow-dialog: 0 8px 24px rgba(0, 0, 0, 0.55);
 }
 
+/* 跟随系统：系统是深色就用深色那套。
+   注意这里必须整个重复一遍值，不能用 @import 或者别的办法复用上面的块 ——
+   选择器不一样（这里是 html[data-theme="system"]，上面是 [data-theme="dark"]），
+   CSS 变量没法继承一套再覆盖一套的写法。
+
+   还有个坑：这段必须放在 [data-theme="dark"] 之后。
+   两个选择器特异性一样，靠顺序决定谁赢；用户明确选了深色时属性是 dark，
+   不命中这里，没问题。但如果哪天把这段挪到前面，属性被改成 system 时，
+   两边同时命中的情况就会以前面那个（dark）为准。 */
 @media (prefers-color-scheme: dark) {
   html[data-theme="system"] {
     color-scheme: dark;
@@ -123,68 +210,111 @@ html[data-theme="dark"] {
   }
 }
 
+/* ───────────────────────── 基础重置 ───────────────────────── */
+
+/* 全局 border-box。少了它，所有写了宽度 + padding 的控件都会超出预期宽度，
+   40px 的开关会变成 44px。 */
 * { box-sizing: border-box; }
 
 /* hidden 属性必须压过下面那些 display:grid / display:flex 的类规则 */
+/* ↑ 这条 !important 不能省。
+   [hidden] 的本意是「藏起来」，但它的特异性只有一个属性选择器，
+   而我们给 .settings-layer 这类元素写了 display: grid。
+   类对属性选择器，类赢，于是 hidden="true" 的弹层照样显示。
+   用 !important 把这条抬到最高，才能让 JS 里 el.layer.hidden = true 真的生效。 */
 [hidden] { display: none !important; }
 
+/* 撑满窗口，且禁止页面级滚动。
+   这个窗口是固定尺寸的外壳，滚动只该发生在设置面板内部（.settings-panes 有自己的
+   overflow-y: auto）。外层一滚，标题栏会跟着滚走，就变成一张「网页」而不是窗口了。 */
 html, body {
   height: 100%;
   margin: 0;
   overflow: hidden;
 }
 
+/* 竖向布局：标题栏 48px 固定，剩下的全给 .home（flex: 1 1 auto）。
+   300ms 的色彩过渡是给主题切换用的 —— 不想要切主题时整屏「啪」一下变脸。 */
 body {
   font-family: var(--font);
   font-size: 14px;
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
+  /* 关掉次像素抗锯齿，改成灰度抗锯齿。深色主题下用次像素描字会出现彩边 */
   -webkit-font-smoothing: antialiased;
   display: flex;
   flex-direction: column;
   transition: background-color 200ms var(--ease-inout), color 200ms var(--ease-inout);
 }
 
+/* tabular-nums：把数字强制成等宽。
+   端口号和统计数字不加这个的话，位数一变整行字会左右挪，
+   而设置页每打开一次这些数字都在变，看着很跳。 */
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* 代理地址用。break-all 是必须的：那条规则串中间全是 : 和 ;，没有空格，
+   不强制断行的话它会把卡片顶宽，或者溢出到面板外面被裁掉。 */
 .mono-break { font-family: var(--mono); font-size: 12px; word-break: break-all; color: var(--text-2); }
 
 /* ───────────────────────── 标题栏 ───────────────────────── */
 
+/* 48px 是 Win11 标题栏的标准高度，用户对这个尺寸有直觉（双击、拖拽的位置）。
+   flex: 0 0 48px 让它永远不被压缩 —— body 是 flex 竖布局，
+   少了这个，内容一多标题栏就会被挤扁。 */
 .titlebar {
   height: 48px;
   flex: 0 0 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* 右边不留 padding：窗口控制按钮要顶到窗口边缘，跟原生窗口一样。
+     左内边距配 16，是标题文字的常规起始位置 */
   padding-left: 16px;
+  /* Mica 材质。alpha 底色 + 大半径模糊 + 提饱和，
+     saturate 是为了让透过来的桌面颜色不发灰 */
   background: var(--mica);
   backdrop-filter: blur(60px) saturate(120%);
+  /* 边框先设成透明，滚动时才显形（见下面的 .scrolled）。
+     直接给 --line 的话，主页不滚动时也会有一条线，显得多余 */
   border-bottom: 1px solid transparent;
+  /* 整条可拖。这是 Electron 的无边框窗口专用的拖拽属性，
+     普通浏览器里没有效果 */
   -webkit-app-region: drag;
+  /* 标题栏不该能选中文字。拖拽的时候一选就出蓝底，很出戏 */
   user-select: none;
+  /* 相对定位 + z-index，保证它压在下面所有内容之上 */
   position: relative;
   z-index: 30;
 }
 
+/* 页面滚动之后才显示分隔线。现在这个界面其实不滚（外层 overflow:hidden），
+   留着是为了以后内容区变动时能直接用 */
 .titlebar.scrolled { border-bottom-color: var(--line); }
 
 .titlebar-left, .titlebar-right {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* 这个是给 flex 子项收缩用的：min-width: 0 才允许子项被压到比内容更窄，
+     不然长标题会把右边的按钮挤出窗口 */
   min-width: 0;
 }
 
+/* 右边按钮挨得紧一点（4px），跟左边 8px 不一样：
+   窗口控制按钮本来就是连续的一整块，中间不该有明显缝隙 */
 .titlebar-right { gap: 4px; }
 
 .app-mark {
   width: 20px; height: 20px;
   display: grid; place-items: center;
   color: var(--accent);
+  /* flex: 0 0 auto 不让它被压缩。这个图标不该跟着窗口宽度变 */
   flex: 0 0 auto;
 }
 
+/* 标题文字。用 13px + 600 而不是更大：
+   Win11 的标题栏字本来就不大，字号一上去就变成网页顶部横幅了。
+   颜色用 --text-2 而不是正文色，是有意压低存在感 —— 这软件的重点在中间那个按钮 */
 .app-title {
   font-family: var(--font-display);
   font-size: 13px;
@@ -194,6 +324,8 @@ body {
   white-space: nowrap;
 }
 
+/* 标题栏里的横向导航条。当前版本没用到（导航在设置面板里），
+   保留给以后放标题栏页签 */
 .nav-strip {
   display: flex;
   align-items: center;
@@ -204,6 +336,9 @@ body {
 }
 
 /* 图标按钮 40×32，热区比图标大一圈 */
+/* ↑ 实际是 36×32。这里必须写 -webkit-app-region: no-drag，
+   否则按钮处在可拖区里，点击会被当成拖窗口的开始，
+   click 事件根本不会派发 —— 表现就是「齿轮点不动」 */
 .icon-btn {
   -webkit-app-region: no-drag;
   width: 36px; height: 32px;
@@ -218,6 +353,8 @@ body {
 .icon-btn:hover { background: var(--hover); color: var(--text); }
 .icon-btn:active { background: var(--press); }
 .icon-btn:disabled { color: var(--text-dis); background: transparent; cursor: default; }
+/* 焦点环用两层 box-shadow 叠出来：内层跟背景同色当「间隙」，外层才是主色。
+   直接用 outline 的话环会紧贴边框，看着像原生的丑焦点框 */
 .icon-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--accent);
@@ -226,6 +363,8 @@ body {
 .gear { width: 36px; height: 32px; }
 
 /* 运行时间小胶囊 */
+/* 这个组件在当前 HTML 里没有用（运行时间搬到了主页大字），
+   留着的样式不影响任何东西 */
 .uptime-chip {
   display: flex;
   align-items: center;
@@ -245,12 +384,17 @@ body {
   box-shadow: 0 0 0 0 rgba(15, 123, 15, 0.5);
   animation: ping 2s var(--ease-out) infinite;
 }
+/* 呼吸灯：只动 box-shadow 的扩散半径，不动 transform / opacity。
+   box-shadow 动画的开销比 transform 高，但这里只有一个 6px 的点，
+   而且 transform 缩放会让圆点看起来在变大变小，不像光晕 */
 @keyframes ping {
   0%   { box-shadow: 0 0 0 0 rgba(15, 123, 15, 0.45); }
   70%  { box-shadow: 0 0 0 6px rgba(15, 123, 15, 0); }
   100% { box-shadow: 0 0 0 0 rgba(15, 123, 15, 0); }
 }
 
+/* 窗口控制按钮。46×48 是 Win11 的精确值，别改 ——
+   用户手放上去的位置、连点三下的节奏都依赖这个尺寸 */
 .win-controls {
   display: flex;
   -webkit-app-region: no-drag;
@@ -263,15 +407,22 @@ body {
   background: transparent;
   color: var(--text-2);
   cursor: pointer;
+  /* 100ms linear，比别处快也比别处直。窗口按钮是点得最频繁的地方，
+     它必须「一碰就变」；linear 是因为这里没有画面位移，缓入缓出反而钝 */
   transition: background-color 100ms linear, color 100ms linear;
 }
 .win-btn:hover { background: var(--hover); color: var(--text); }
 .win-btn:active { background: var(--press); }
+/* 关闭按钮 hover 变红。色值写死了不用变量，因为 Windows 的关闭红
+   在深浅两个主题下是同一个色，做成变量反而要多维护一份 */
 .win-close:hover { background: #c42b1c; color: #fff; }
 .win-close:active { background: #9d2a1c; color: #fff; }
 
 /* ───────────────────────── 主页 ───────────────────────── */
 
+/* flex: 1 1 auto 吃掉标题栏剩下的全部高度；min-height: 0 是配套的，
+   不加的话 flex 子项默认 min-height: auto，内容多时会把 body 撑出滚动条。
+   grid + place-items: center 做水平和垂直双向居中 */
 .home {
   flex: 1 1 auto;
   min-height: 0;
@@ -280,6 +431,8 @@ body {
   padding: 24px;
 }
 
+/* gap: 0 —— 间距全靠各个子元素自己的 margin-bottom 控制。
+   用 gap 的话秒表下面那 40px 和提示语的 20px 没法分开设 */
 .hero {
   display: flex;
   flex-direction: column;
@@ -288,11 +441,18 @@ body {
   animation: enter 320ms var(--ease-out) both;
 }
 
+/* 进场：淡入 + 从下往上挪 8px。
+   8px 是「能感觉到动、但不会让人等它动完」的距离；
+   位移再大就会觉得界面在加载。
+   both 让元素在动画开始前就停在 from 状态，避免先闪一下原位置 */
 @keyframes enter {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: none; }
 }
 
+/* 小标签「运行时间」。字距 0.08em + uppercase 是故意拉稀的 ——
+   中文用不到 uppercase，但字距在这里一样有效果，
+   让三个字撑开、看着像标题而不是正文 */
 .uptime-label {
   font-size: 12px;
   font-weight: 400;
@@ -302,6 +462,10 @@ body {
   margin-bottom: 6px;
 }
 
+/* 56px 是这界面唯一的大字。数字用 font-variant-numeric: tabular-nums，
+   否则 1 和 8 宽度不同，每秒跳一次的时候整行会左右抖。
+   line-height 给到 1.3：中文字体的行高比西文小，
+   不加的话上下会被裁掉一点（尤其是冒号） */
 .uptime {
   font-family: var(--font-display);
   font-size: 56px;
@@ -312,9 +476,13 @@ body {
   color: var(--text);
   margin-bottom: 40px;
 }
+/* 代理在跑的时候数字变成主色。这是全屏唯一的一处颜色变化，
+   所以它一眼就能看出「在跑 / 没跑」，不用读文字 */
 .uptime.running { color: var(--accent); }
 
 /* 主按钮：40px 高，4px 圆角，Accent 填充 */
+/* ↑ 实际 48px 高。padding 左 24 右 32 —— 右边宽一点，
+   是因为右边只有文字、左边有图标，视觉重量左边更重，得用不对称的余量找回平衡 */
 .launch {
   -webkit-app-region: no-drag;
   display: inline-flex;
@@ -331,27 +499,44 @@ body {
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--shadow-2);
+  /* 三个属性分开给时长：变色 120ms、位移 100ms、阴影 120ms。
+     transform 给最快的是因为按下的手感想跟手，慢 20ms 就能觉出来 */
   transition: background-color 120ms var(--ease-out), transform 100ms var(--ease-out),
               box-shadow 120ms var(--ease-out);
 }
+/* 深色主题下主按钮上的字用黑色。
+   浅色主色 #60cdff 太亮，压白字看不清 —— 这是深色主题里最容易漏的一处 */
 html[data-theme="dark"] .launch { color: #000; }
 @media (prefers-color-scheme: dark) {
   html[data-theme="system"] .launch { color: #000; }
 }
 
+/* hover 时阴影加重一点（0 4px 10px / 0.14），配合背景变亮，
+   做出「浮起来」的效果 */
 .launch:hover { background: var(--accent-hover); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.14); }
+/* 按下缩到 0.985。缩得再多就像在抖，缩得太少又感觉不到 */
 .launch:active { background: var(--accent-press); transform: scale(0.985); }
+/* 焦点环的内层用 --bg 而不是 --bg-2：这个按钮坐在窗口底色上，
+   内侧要跟窗口底色一致才看着像「离开按钮」 */
 .launch:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 }
+/* 禁用态（正在启动/停止）。背景退成 --ctrl，阴影去掉，
+   光标变箭头 —— 不能点的时候要看起来就不能点 */
 .launch:disabled { background: var(--ctrl); color: var(--text-dis); box-shadow: none; cursor: default; }
 
+/* margin-top: 1px 是把三角形图标视觉上居中。
+   SVG 的包围盒跟三角形的视觉重心对不上，不挪这一像素会显得偏低 */
 .launch-icon { display: grid; place-items: center; margin-top: 1px; }
+/* 忙的时候让图标转起来当 loading。转的是那个三角图标本身，
+   没有额外插一个 spinner 元素 */
 .launch.busy .launch-icon svg { animation: spin 900ms linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* 已经在跑的时候，按钮变成「停止代理」，用次要样式，别抢注意力 */
+/* 三个覆盖一起做：背景退成控件色、字变正文色、去掉阴影。
+   同时把三角图标换成方块（下面的 ::after），用形状表示「停」而不只是改文字 */
 .launch.stop {
   background: var(--ctrl);
   color: var(--text);
@@ -359,7 +544,10 @@ html[data-theme="dark"] .launch { color: #000; }
 }
 .launch.stop:hover { background: var(--hover); box-shadow: none; }
 .launch.stop:active { background: var(--press); }
+/* 原图标整个藏掉（不能只改颜色，形状本身是「播放」的语义） */
 .launch.stop .launch-icon svg { display: none; }
+/* 用一个 12×12 的方块顶替。content: "" + background 是最省的办法，
+   不用往 DOM 里加元素。2px 圆角跟整体圆角体系对上 */
 .launch.stop .launch-icon::after {
   content: "";
   width: 12px;
@@ -368,10 +556,13 @@ html[data-theme="dark"] .launch { color: #000; }
   background: currentColor;
 }
 
+/* 按钮下面那行状态提示。max-width 460 让它长句子能折行，
+   不至于横穿整个窗口 */
 .status {
   margin: 20px 0 0;
   font-size: 14px;
   color: var(--text-2);
+  /* min-height 跟一行文字的高度对齐，作用是提示出现/消失时按钮不会上下跳 */
   min-height: 21px;
   text-align: center;
   max-width: 460px;
@@ -379,6 +570,13 @@ html[data-theme="dark"] .launch { color: #000; }
 
 /* ───────────────────────── 失败提示 ───────────────────────── */
 
+/* 全屏盖住的失败卡片。这个组件在当前 HTML 里没有用到 ——
+   现在启动失败是走主页的 .status 提示，不弹这一层。
+   样式留着，以后要做「连接诊断失败」的整屏提示可以直接用。
+
+   inset: 48px 0 0 0 是让开标题栏（同 .settings-layer），
+   position: absolute 而不是 fixed，是因为它要相对整个 body 定位、
+   但又要跟着窗口的布局走 */
 .fail {
   position: absolute;
   inset: 48px 0 0 0;
@@ -413,6 +611,9 @@ html[data-theme="dark"] .launch { color: #000; }
 
 /* ───────────────────────── 通用件 ───────────────────────── */
 
+/* 次要按钮。32px 高，比主页那个 48px 的主按钮矮一档 ——
+   设置页里的按钮都是「辅助操作」，不该跟主操作一样大。
+   配色走 --ctrl + 边框，不是实心主色 */
 .btn {
   height: 32px;
   padding: 0 16px;
@@ -434,12 +635,16 @@ html[data-theme="dark"] .launch { color: #000; }
 .btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--accent); }
 .btn:disabled { color: var(--text-dis); background: var(--bg); cursor: default; }
 
+/* 强调按钮。border-color: transparent 而不是 border: 0 ——
+   保留边框宽度，这样强调按钮和普通按钮一样高，
+   换成 border: 0 会矮 2px，并排的时候一高一低 */
 .btn.accent {
   border-color: transparent;
   background: var(--accent);
   color: #fff;
   font-weight: 600;
 }
+/* 同 .launch：深色主色太亮，白字看不清，得改黑字 */
 html[data-theme="dark"] .btn.accent { color: #000; }
 @media (prefers-color-scheme: dark) {
   html[data-theme="system"] .btn.accent { color: #000; }
@@ -447,12 +652,19 @@ html[data-theme="dark"] .btn.accent { color: #000; }
 .btn.accent:hover { background: var(--accent-hover); }
 .btn.accent:active { background: var(--accent-press); }
 
+/* 小号。28px 高 + 13px 字，用在卡片里跟着说明文字走的那些操作按钮上 */
 .btn.small { height: 28px; padding: 0 12px; font-size: 13px; }
 
+/* 开关（Win11 ToggleSwitch）。整个东西是自己画的：
+   底座是 40×20 的圆角方块，圆点（.knob）绝对定位在里面左右挪。
+   没用 <input type=checkbox> 是因为这个滑块的样子几乎没法用伪元素做出来，
+   用 button + role="switch" + aria-checked 既能自定义样式，语义也不丢 */
 .switch {
   -webkit-app-region: no-drag;
+  /* position: relative 是给里面绝对定位的圆点当参照系 */
   position: relative;
   width: 40px; height: 20px;
+  /* flex: 0 0 40px 防止它在 .row 里被文字挤窄 —— 开关变形就不好看了 */
   flex: 0 0 40px;
   border-radius: 10px;
   border: 1px solid var(--text-3);
@@ -460,6 +672,9 @@ html[data-theme="dark"] .btn.accent { color: #000; }
   cursor: pointer;
   transition: background-color 120ms var(--ease-out), border-color 120ms var(--ease-out);
 }
+/* 圆点。top: 50% 定位到垂直中线，再用负 margin-top 抵消自身一半高度 ——
+   这样不管 hover 时圆点被放大到多少，都保持居中。
+   换成 top: calc(50% - 6px) 的话，hover 变大就会偏 */
 .switch .knob {
   position: absolute;
   top: 50%;
@@ -468,26 +683,35 @@ html[data-theme="dark"] .btn.accent { color: #000; }
   margin-top: -6px;
   border-radius: 50%;
   background: var(--text-2);
+  /* 位移用 winui 曲线（起步快、收尾慢），看着像被「弹」过去的 */
   transition: transform 150ms var(--ease-winui), background-color 120ms linear,
               width 150ms var(--ease-winui), height 150ms var(--ease-winui), margin 150ms var(--ease-winui);
 }
+/* 打开：底座变主色。边框也跟着变，不然会留一圈灰边 */
 .switch[aria-checked="true"] {
   background: var(--accent);
   border-color: var(--accent);
 }
+/* 圆点移动到右边。20px 是算好的：40 底座 - 2 边框 - 3 左边距 - 12 圆点 - 3 右边距 = 20。
+   改尺寸时这个数得跟着重算 */
 .switch[aria-checked="true"] .knob {
   background: #fff;
   transform: translateX(20px);
 }
+/* 深色下圆点用黑色，理由同主按钮 */
 html[data-theme="dark"] .switch[aria-checked="true"] .knob { background: #000; }
 @media (prefers-color-scheme: dark) {
   html[data-theme="system"] .switch[aria-checked="true"] .knob { background: #000; }
 }
+/* hover 时圆点放大 2px。Win11 原生开关就是这个行为：
+   鼠标靠近时圆点会「鼓」一下，提示这个热区是活的 */
 .switch:hover .knob { width: 14px; height: 14px; margin-top: -7px; }
 .switch:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--accent); }
 
+/* 分段控件（主题那个三选一）。外层做凹槽，选中项做凸起 */
 .seg {
   display: inline-flex;
+  /* 外层 2px 内边距给选中项留出「嵌在槽里」的位置 */
   padding: 2px;
   border-radius: var(--r-sm);
   background: var(--bg-3);
@@ -498,6 +722,8 @@ html[data-theme="dark"] .switch[aria-checked="true"] .knob { background: #000; }
   height: 28px;
   padding: 0 16px;
   border: 0;
+  /* 3px 而不是 sm 的 4px：它嵌在外层 4px 圆角里，
+     差一像素才显得是内凹的，同圆角会看着粘在一起 */
   border-radius: 3px;
   background: transparent;
   color: var(--text-2);
@@ -507,15 +733,23 @@ html[data-theme="dark"] .switch[aria-checked="true"] .knob { background: #000; }
   transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
 }
 .seg-btn:hover { background: var(--hover); }
+/* 选中态：底变白 + 加一点点投影，做出浮起来的感觉。
+   aria-checked 驱动，不额外加 .active 类 */
 .seg-btn[aria-checked="true"] {
   background: var(--bg-2);
   color: var(--text);
   font-weight: 600;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
 }
+/* 深色下选中项不能用 --bg-2（比凹槽还暗，看着像陷下去），
+   改用 --bg-3，比凹槽亮一档才是「凸起」 */
 html[data-theme="dark"] .seg-btn[aria-checked="true"] { background: var(--bg-3); }
+/* 这个焦点环只画一圈（别的控件是两圈）。
+   因为它周围本来就有凹槽底色，再叠内圈会显得很脏 */
 .seg-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent); }
 
+/* 输入框。边框用 --text-3 而不是 --line：
+   --line 太浅，输入框会看着像不可编辑的文本框 */
 .input, .select {
   width: 100%;
   height: 32px;
@@ -528,6 +762,8 @@ html[data-theme="dark"] .seg-btn[aria-checked="true"] { background: var(--bg-3);
   font-size: 14px;
   transition: border-color 120ms linear, box-shadow 120ms linear;
 }
+/* 聚焦时底部加一条 2px 的主色内阴影，这是 Win11 输入框的标志性细节：
+   不是整圈变蓝，只在底边亮一条，看着更轻 */
 .input:focus, .select:focus {
   outline: none;
   border-color: var(--accent);
@@ -535,6 +771,8 @@ html[data-theme="dark"] .seg-btn[aria-checked="true"] { background: var(--bg-3);
 }
 .input::placeholder { color: var(--text-3); }
 
+/* 复选框组。当前 HTML 里没有用（设置页全用的 .switch），
+   留给以后可能的多选项场景 */
 .checks { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 12px; }
 .check {
   display: flex;
@@ -544,6 +782,8 @@ html[data-theme="dark"] .seg-btn[aria-checked="true"] { background: var(--bg-3);
   color: var(--text);
   cursor: pointer;
 }
+/* 自己画的方框。appearance: none 把原生复选框的样式整个去掉，
+   然后从零画一个 18px 的圆角方块 */
 .check input {
   appearance: none;
   width: 18px; height: 18px;
@@ -556,6 +796,8 @@ html[data-theme="dark"] .seg-btn[aria-checked="true"] { background: var(--bg-3);
   transition: background-color 120ms linear, border-color 120ms linear;
 }
 .check input:checked { background: var(--accent); border-color: var(--accent); }
+/* 勾。用两条边框拼成一个旋转 45° 的「L」，比引一个 SVG 或字体图标省事得多。
+   left 5 / top 1 是试出来的：让勾的视觉中心刚好落在方块中间 */
 .check input:checked::after {
   content: "";
   position: absolute;
@@ -571,6 +813,9 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
 }
 .check input:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 4px var(--accent); }
 
+/* 输出框（联通性检查的结果）。max-height 240 是为了内容长的时候
+   它自己内部滚动，不要把设置面板顶高 —— 面板高度是固定的，
+   内容一长会撑出滚动条，按钮就跟着跑了 */
 .output {
   margin: 12px 0 0;
   padding: 12px;
@@ -582,31 +827,47 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
   font-family: var(--mono);
   font-size: 12px;
   line-height: 1.6;
+  /* pre-wrap：保留换行，但允许按宽度自动折。用 pre 的话长行会横向溢出 */
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text-2);
 }
+/* 出错态。边框用 color-mix 把错误色调成半透明再混进边框色 ——
+   直接写 --err 会太红，边框只是提示，不该比文字还抢眼 */
 .output.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, transparent); }
 
+/* 键值对列表（dl）。左列固定 96px，右列吃掉剩下的。
+   固定宽度是为了让几张卡片里的标签纵向对齐，
+   自动宽度会每行各算各的，看着很散 */
 .kv { display: grid; grid-template-columns: 96px 1fr; gap: 6px 16px; margin: 0; font-size: 13px; }
 .kv dt { color: var(--text-3); }
+/* dd 默认有 margin-left，不清零会整体右偏。
+   break-all 兜住「挡得最多」那种很长的域名串 */
 .kv dd { margin: 0; color: var(--text-2); word-break: break-all; }
 
 /* ───────────────────────── 设置 ───────────────────────── */
 
+/* 遮罩层。fixed 定位盖住整个窗口，inset: 48px 0 0 0 让开标题栏 ——
+   这样面板打开时标题栏还能拖，用户不会觉得窗口「卡住了」 */
 .settings-layer {
   position: fixed;
   inset: 48px 0 0 0;
   z-index: 40;
   background: var(--layer);
+  /* grid + place-items 让面板居中，同时 .settings-panel 里 max-height: 100%
+     能拿到这里的可用高度（grid 居中不留 padding 剩余空间的问题） */
   display: grid;
   place-items: center;
   padding: 24px;
+  /* 150ms 淡入。遮罩出现得快一点，面板才有「从遮罩里浮出来」的层次 */
   animation: fade 150ms linear both;
   -webkit-app-region: no-drag;
 }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
+/* 设置面板本体。
+   max-height: 100% + 内部 overflow 分层（头部固定、导航固定、内容区滚动）
+   是这套布局的关键：面板不能被内容撑得超出窗口。 */
 .settings-panel {
   width: 100%;
   max-width: 800px;
@@ -617,20 +878,29 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
   border: 1px solid var(--line);
   background: var(--bg-2);
   box-shadow: var(--shadow-dialog);
+  /* overflow: hidden 有两个作用：
+     一是把子元素的直角裁进 12px 圆角里（不然导航栏的底色会露出方角），
+     二是让里面的滚动容器正常工作 */
   overflow: hidden;
   animation: dialog 220ms var(--ease-winui) both;
 }
+/* 对话框进场：淡入 + 从下挪 10px + 从 99% 放大到 100%。
+   那个 0.99 的缩放很小，几乎看不出来，但会让面板显得是「长出来」的，
+   不是凭空出现。220ms 比遮罩的 150ms 长，形成先暗后亮的顺序感 */
 @keyframes dialog {
   from { opacity: 0; transform: translateY(10px) scale(0.99); }
   to   { opacity: 1; transform: none; }
 }
 
+/* 面板头部。padding 左边 24 右边 16 不对称，是因为右边是图标按钮，
+   它自带内边距，视觉上已经留出位置了 */
 .settings-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 16px 16px 16px 24px;
   border-bottom: 1px solid var(--line);
+  /* flex: 0 0 auto 让头部不被压缩，高度固定，滚动只发生在下面 */
   flex: 0 0 auto;
 }
 .settings-head h1 {
@@ -646,6 +916,8 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
   flex: 1 1 auto;
 }
 
+/* 左导航。160px 固定宽，够放四个两字标签还有余量。
+   overflow-y: auto 是给以后页签变多留的，现在四个用不上 */
 .settings-nav {
   flex: 0 0 160px;
   display: flex;
@@ -656,6 +928,7 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
   background: var(--bg-3);
   overflow-y: auto;
 }
+/* 导航项。position: relative 是给选中时左边那条竖线用的 */
 .nav-item {
   position: relative;
   height: 40px;
@@ -672,6 +945,8 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
 }
 .nav-item:hover { background: var(--hover); color: var(--text); }
 .nav-item.active { color: var(--text); font-weight: 600; background: var(--bg-2); }
+/* 选中项左边那条 3px 竖线。用 ::before 画而不是 border-left，
+   是因为 border 会占掉内边距、把文字推右 3px，选中时字会跳一下 */
 .nav-item.active::before {
   content: "";
   position: absolute;
@@ -682,15 +957,21 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
 }
 .nav-item:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent); }
 
+/* 右内容区。这块是唯一滚动的容器。min-width: 0 防长单词把它顶宽 */
 .settings-panes {
   flex: 1 1 auto;
   min-width: 0;
   overflow-y: auto;
   padding: 24px;
 }
+/* 页签默认全藏，只有 .active 那个显示。
+   用 display: none 而不是 visibility / opacity ——
+   藏起来的页签不该占布局、也不该能被 Tab 到 */
 .pane { display: none; }
 .pane.active { display: block; animation: enter 200ms var(--ease-out) both; }
 
+/* 页签标题。:not(:first-child) 那条 margin-top 是给一个页签里有多个标题的情况
+   （当前没有），第一个标题不加上边距，否则内容区顶部会多一块空白 */
 .pane-title {
   margin: 0 0 16px;
   font-family: var(--font-display);
@@ -700,6 +981,8 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
 }
 .pane-title:not(:first-child) { margin-top: 32px; }
 
+/* 卡片。margin-bottom: 12px 排卡片之间的间距，
+   最后一张用 :last-child 去掉，不然面板底部会多出 12px */
 .card {
   padding: 16px;
   margin-bottom: 12px;
@@ -709,7 +992,11 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
   transition: box-shadow 120ms var(--ease-out);
 }
 .card:last-child { margin-bottom: 0; }
+/* hover 轻微加一层阴影。卡片本身不可点，这点阴影只是提示「这是一块内容」，
+   刻意做得几乎看不见 */
 .card:hover { box-shadow: var(--shadow-2); }
+/* 警告卡片。用 color-mix 把警告色按比例混进边框和背景，
+   这样深色主题下自动跟着适配，不用再写一套深色覆盖 */
 .card.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); background: color-mix(in srgb, var(--warn) 5%, var(--bg-2)); }
 
 .card-title {
@@ -718,15 +1005,21 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
   color: var(--text);
   margin-bottom: 8px;
 }
+/* 一行两栏：左边文字自适应，右边开关/按钮固定。align-items: flex-start
+   而不是 center —— 说明文字有两三行时，开关要对齐第一行，不是垂直居中 */
 .row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
 }
+/* min-width: 0 必须有。没有它，左边的长说明文字会把右边的开关挤出卡片 */
 .row-text { min-width: 0; }
+/* 在 .row 里标题的下边距收一点（6 而不是 8），
+   因为它下面紧跟的是说明文字，不是别的内容块 */
 .row .card-title { margin-bottom: 6px; }
 
+/* 说明文字。13px + 1.6 行高，比正文小一号、行距松一点，长句子好读 */
 .desc {
   margin: 0 0 8px;
   font-size: 13px;
@@ -735,19 +1028,28 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
 }
 .desc:last-child { margin-bottom: 0; }
 
+/* 主色小提示。当前 HTML 里没用（提示都写成 .desc 了），
+   留着给需要强调的补充说明 */
 .note {
   margin: 12px 0 0;
   font-size: 12px;
   color: var(--accent);
 }
 
+/* 纯文字提示。跟 .desc 的区别是没有下边距 */
 .hint { margin: 0; font-size: 13px; line-height: 1.6; color: var(--text-2); }
 
+/* 按钮行。flex-wrap 让按钮多到放不下时换行，
+   不会挤成一条把卡片撑宽 */
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
+/* 两列栅格（缓存上限、窗口宽高）。1fr 1fr 保证两列等宽 */
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+/* 带标签的输入框。标签在上、输入框在下，用 flex 竖排 */
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-3); }
 
+/* 适配器列表。当前版本没用到（没有多网卡选择的功能），
+   样式留着备用 */
 .adapter-list { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
 .adapter {
   display: flex;
@@ -764,6 +1066,11 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
 
 /* ───────────────────────── 滚动条 ───────────────────────── */
 
+/* 12px 宽（含下面的透明边框），比浏览器默认的 15px 窄一点，
+   跟 Win11 的细滚动条更接近。
+   那个 border: 4px solid transparent + background-clip: content-box
+   是画「细条」的经典写法：整体热区还是 12px 好点，
+   可见的条只有 4px 宽 */
 ::-webkit-scrollbar { width: 12px; height: 12px; }
 ::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--text-3) 55%, transparent);
@@ -771,11 +1078,19 @@ html[data-theme="dark"] .check input:checked::after { border-color: #000; }
   border-radius: 8px;
   background-clip: content-box;
 }
+/* hover 时加实。注意这里的 background-clip 要重写一遍 ——
+   上面那条规则里的 background-clip 会被 background 简写重置，
+   光改 background 的话 hover 时整条滚动条会突然变粗 */
 ::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* ───────────────────────── 减少动效 ───────────────────────── */
 
+/* 系统里开了「减少动画」时，把时长压到 0.01ms。
+   为什么不是 animation: none / transition: none：
+   有些代码依赖 animationend / transitionend 事件（比如靠动画结束后收尾的逻辑），
+   直接删掉动画就永远等不到事件了。留 0.01ms 等于瞬间完成，事件照样派发。
+   !important 是必须的 —— 要盖过上面所有写了 animation / transition 的规则。 */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
